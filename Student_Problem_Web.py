@@ -6,7 +6,7 @@ import pickle
 
 st.title('問題行動予測アプリ')
 
-uploaded_file = st.file_uploader("CSVファイルをアップロードしてください。")
+uploaded_file = st.file_uploader("CSVファイルをアップロードしてください。",type='csv')
 
 #文字列の列を抜き出す（d_marge01_A～d_marge36_A,それぞれ末尾D,F,H）
 str_col_name = []
@@ -17,6 +17,7 @@ for alphabet in alphabetlist:
             str_col_name.append("d_marge0" + str(num +1)  + "_" + alphabet)
         else:
             str_col_name.append("d_marge" + str(num +1)  + "_" + alphabet )
+
 #予測に使用しないカラムを取得
 drop_alphabetlist = ["a","b","c","d"]
 drop_col_name = []
@@ -55,13 +56,24 @@ with open('Student_Problem.pkl','rb') as f:
 
 #データの読み込み
 if uploaded_file is not None:
+
     df = pd.read_csv(
         uploaded_file,
         engine='python',
         na_values='-',
         header=0)
     
-    #文字列だけのデータフレームstr_df
+    chackcolname = [str_col_name,drop_col_name]
+    for checkcol in chackcolname:
+        # str_col_name リストと df データフレームのカラム名の一致をチェック
+        invalid_cols = [col for col in checkcol if col not in df.columns]
+
+        if len(invalid_cols) > 0:
+            # エラーメッセージを表示してプログラムを終了
+            st.error(f"次のカラム名が存在しません。ファイルを確認してください: {', '.join(invalid_cols)}")
+            # 以降の処理をスキップ
+            st.stop()
+      
     str_df = df[str_col_name]
     #ダミー変数変化用の列を追加
     for column_name in categories_name:
@@ -80,16 +92,23 @@ if uploaded_file is not None:
     #もとのデータフレームから文字列の列だけ削除
     df2 = df.drop(str_col_name,axis = 1)
 
-
+    #欠損値を0で穴埋め
     df2 = df2.fillna(0)
+    #モデル学習に使用しないカラムを削除
     df_x = df2.drop(drop_col_name,axis=1)
+
+    
+
+    try:
+        x_pred = model2.predict(df_x)
+    except Exception as e:
+        st.error(f"予測時にエラーが発生しました。ファイルを確認してください。: {e}")
+        st.stop()
 
     option = st.selectbox(
     '表示選択',
-    ['すべて表示','問題行動を起こす可能性が高い児童のみ表示']
+    ['すべて表示','問題行動を起こす可能性が高い児童のみ表示','問題行動を起こす可能性が低い児童のみ表示']
     )
-
-    x_pred = model2.predict(df_x)
 
     df_x_pred = pd.DataFrame(x_pred, columns=['Predict'])
     df_x_pred['問題行動を起こす可能性'] = ["可能性は低いです。" if p == 0 else"問題行動を起こす可能性があります。" for p in df_x_pred['Predict']]
@@ -105,7 +124,7 @@ if uploaded_file is not None:
     
         st.write(df_y_new)
 
-    else:
+    elif option == '問題行動を起こす可能性が高い児童のみ表示':
         df_y = pd.concat([t,df_x_pred],axis = 1)
         #予測結果が0(可能性低)のインデックスを取得
         indexNames = df_y[ (df_y['Predict'] == 0)].index
@@ -116,6 +135,18 @@ if uploaded_file is not None:
         
         df_y_new = df_y.rename(columns = {'a_StudentId': 'StudentId'})
         st.write(df_y_new)
+    else:   
+        df_y = pd.concat([t,df_x_pred],axis = 1)
+        #予測結果が0(可能性低)のインデックスを取得
+        indexNames = df_y[ (df_y['Predict'] == 1)].index
+        #その行を削除
+        df_y.drop(indexNames , inplace=True)
+        #0,1の行を削除
+        df_y = df_y.drop(['Predict'],axis=1)
+        
+        df_y_new = df_y.rename(columns = {'a_StudentId': 'StudentId'})
+        st.write(df_y_new)
+
 
     
 
